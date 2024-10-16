@@ -43,7 +43,7 @@ func main() {
 	}
 	cidJson := gjson.Parse(string(cidContext))
 	cidJson.Get("data").ForEach(func(key, value gjson.Result) bool {
-		log.Printf("%d, Part标题: %s, PartCID: %d", value.Get("page").Int(), value.Get("part").String(), value.Get("cidReq").Int())
+		log.Printf("%d, Part标题: %s, PartCID: %d", value.Get("page").Int(), value.Get("part").String(), value.Get("cid").Int())
 		return true
 	})
 	inp, err := bufio.NewReader(os.Stdin).ReadString('\n')
