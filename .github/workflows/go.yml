@@ -5,7 +5,7 @@ on:
     branches: ["main"]
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -18,11 +18,9 @@ jobs:
       issues: read
       pull-requests: read
 
-    outputs:
-      tag: ${{ steps.calculate_next_tag.outputs.tag }}
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -46,12 +44,23 @@ jobs:
             EXISTS=$(git tag -l "$NEXT_TAG")
           done
           echo "NEXT_TAG=$NEXT_TAG" >> $GITHUB_ENV
-          echo "::set-output name=tag::$NEXT_TAG"
+          echo "tag=$NEXT_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.calculate_next_tag.outputs.tag }}
+          release_name: Release ${{ steps.calculate_next_tag.outputs.tag }}
+          draft: false
+          prerelease: false
 
       - name: Build for all platforms
         run: |
           mkdir -p build
-          output_name=${GITHUB_REPOSITORY}_${{ matrix.os }}_${{ matrix.arch }}
+          output_name=${GITHUB_REPOSITORY##*/}_${{ matrix.os }}_${{ matrix.arch }}
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/$output_name -v
           tar -czvf build/${output_name}.tar.gz -C build $output_name
 
@@ -64,21 +73,3 @@ jobs:
           asset_path: build/${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
           asset_name: ${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          release_name: Release ${{ needs.build.outputs.tag }}
-          draft: false
-          prerelease: false
