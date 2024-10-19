@@ -5,71 +5,60 @@ on:
     branches: ["main"]
 
 jobs:
-  build-and-release:
+  release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        os: [darwin, linux, windows]
-        arch: [amd64, arm64]
-
-    permissions:
-      contents: write
-      packages: read
-      issues: read
-      pull-requests: read
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Ensures all tags are fetched
 
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: "1.23"
 
-      - name: Get current tag and calculate next tag
+      - name: Get current tag
         id: get_version
-        uses: "wyrihaximus/github-action-get-previous-tag@v1"
-        with:
-          fallback: "0.0.0"
-
-      - name: Calculate next tag
-        id: calculate_next_tag
         run: |
-          CURRENT_TAG=${{ steps.get_version.outputs.tag }}
+          # Use the latest tag, not previous, for current workflow
+          echo "current_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+
+      - name: Calculate next tag or use existing
+        id: calculate_tag
+        run: |
+          CURRENT_TAG=${{ steps.get_version.outputs.current_tag || '0.0.0' }}
           NEXT_TAG=$(echo $CURRENT_TAG | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
-          EXISTS=$(git tag -l "$NEXT_TAG")
-          while [ -n "$EXISTS" ]; do
+          while git tag -l "$NEXT_TAG"; do
             NEXT_TAG=$(echo $NEXT_TAG | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
-            EXISTS=$(git tag -l "$NEXT_TAG")
           done
-          echo "NEXT_TAG=$NEXT_TAG" >> $GITHUB_ENV
           echo "tag=$NEXT_TAG" >> $GITHUB_OUTPUT
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Create or Update Release
+        id: create_or_update_release
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.calculate_next_tag.outputs.tag }}
-          release_name: Release ${{ steps.calculate_next_tag.outputs.tag }}
+          tag_name: ${{ steps.calculate_tag.outputs.tag }}
+          name: Release ${{ steps.calculate_tag.outputs.tag }}
+          body: |
+            Changes in this Release
+            - First Change
+            - Second Change
           draft: false
           prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            build/*
+          append_body: true  # This allows you to append to the existing body if updating a release
 
       - name: Build for all platforms
+        if: success()  # Ensure this only runs if there was no failure in release step
         run: |
           mkdir -p build
-          output_name=${GITHUB_REPOSITORY##*/}_${{ matrix.os }}_${{ matrix.arch }}
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/$output_name -v
-          tar -czvf build/${output_name}.tar.gz -C build $output_name
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
-          asset_name: ${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          platforms=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64" "windows/amd64" "windows/arm64")
+          for platform in "${platforms[@]}"; do
+            GOOS=${platform%/*} GOARCH=${platform#*/} go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/} -v
+            tar -czvf build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}.tar.gz -C build ${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}
+          done
