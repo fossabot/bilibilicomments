@@ -7,6 +7,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [darwin, linux, windows]
+        arch: [amd64, arm64]
+
     permissions:
       contents: write
       packages: read
@@ -46,24 +51,9 @@ jobs:
       - name: Build for all platforms
         run: |
           mkdir -p build
-          for os in darwin linux windows; do
-            for arch in amd64 arm64; do
-              output_name=${GITHUB_REPOSITORY}_${os}_${arch}
-              GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/$output_name -v
-              tar -czvf build/${output_name}.tar.gz -C build $output_name
-            done
-          done
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.calculate_next_tag.outputs.tag }}
-          release_name: Release ${{ steps.calculate_next_tag.outputs.tag }}
-          draft: false
-          prerelease: false
+          output_name=${GITHUB_REPOSITORY}_${{ matrix.os }}_${{ matrix.arch }}
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/$output_name -v
+          tar -czvf build/${output_name}.tar.gz -C build $output_name
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -74,3 +64,21 @@ jobs:
           asset_path: build/${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
           asset_name: ${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          release_name: Release ${{ needs.build.outputs.tag }}
+          draft: false
+          prerelease: false
