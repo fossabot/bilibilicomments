@@ -34,6 +34,11 @@ jobs:
         id: calculate_next_tag
         run: |
           NEXT_TAG=$(echo ${{ steps.get_version.outputs.tag }} | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
+          EXISTS=$(git tag -l "$NEXT_TAG")
+          while [ -n "$EXISTS" ]; do
+            NEXT_TAG=$(echo $NEXT_TAG | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
+            EXISTS=$(git tag -l "$NEXT_TAG")
+          done
           echo "tag=$NEXT_TAG" >> $GITHUB_ENV # 使用环境文件设置输出
 
       - name: Build for all platforms
