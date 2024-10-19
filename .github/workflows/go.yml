@@ -19,3 +19,40 @@ jobs:
 
       - name: Build
         run: go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -v
+
+      - name: Get latest release
+        id: get_latest_release
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            try {
+              const latestRelease = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              return latestRelease.data.tag_name;
+            } catch (error) {
+              if (error.status === 404) return 'v0.0.0';
+              throw error;
+            }
+
+      - name: Generate new tag
+        id: generate_tag
+        run: |
+          latest_tag=${{ steps.get_latest_release.outputs.result }}
+          IFS='.' read -ra ADDR <<< "$latest_tag"
+          new_patch=$((ADDR[2] + 1))
+          new_tag="${ADDR[0]}.${ADDR[1]}.$new_patch"
+          echo "NEW_TAG=$new_tag" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.generate_tag.outputs.NEW_TAG }}
+          release_name: ${{ steps.generate_tag.outputs.NEW_TAG }}
+          body: ''
+          draft: false
+          prerelease: false
