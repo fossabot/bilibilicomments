@@ -1,63 +1,128 @@
-name: Go Release
+name: Go
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.get_version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.23"
-
-      - name: Get current tag and calculate next tag
-        id: get_version
-        uses: "WyriHaximus/github-action-get-previous-tag@v1"
-        with:
-          fallback: "0.0.0"
-
-      - name: Calculate next tag
-        id: calculate_next_tag
-        run: |
-          NEXT_TAG=$(echo ${{ steps.get_version.outputs.tag }} | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
-          echo "::set-output name=tag::$NEXT_TAG"
+          go-version: '1.23'
 
       - name: Build for all platforms
         run: |
-          for os in darwin linux windows; do
-            for arch in amd64 arm64; do
-              GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o ${{ github.repository }}_${os}_${arch} -v
-              tar -czvf ${{ github.repository }}_${os}_${arch}.tar.gz ${{ github.repository }}_${os}_${arch}
-            done
-          done
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
+          GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o myrepo-linux-amd64
+          GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o myrepo-linux-arm64
+          GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o myrepo-darwin-amd64
+          GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o myrepo-darwin-arm64
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o myrepo-windows-amd64.exe
+          GOOS=windows GOARCH=arm64 go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o myrepo-windows-arm64.exe
+      - name: Archive build artifacts
+        run: |
+          zip myrepo-linux-amd64.zip myrepo-linux-amd64
+          zip myrepo-linux-arm64.zip myrepo-linux-arm64
+          zip myrepo-darwin-amd64.zip myrepo-darwin-amd64
+          zip myrepo-darwin-arm64.zip myrepo-darwin-arm64
+          zip myrepo-windows-amd64.zip myrepo-windows-amd64.exe
+          zip myrepo-windows-arm64.zip myrepo-windows-arm64.exe
+      - name: Get latest tag
+        id: get_latest_tag
+        run: |
+          latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
+          echo "Latest tag: $latest_tag"
+          echo "latest_tag=$latest_tag" >> $GITHUB_ENV
 
-      - name: Create Release
-        id: create_release
+      - name: Bump version and create tag
+        id: bump_version
+        run: |
+          if [ -z "${{ env.latest_tag }}" ]; then
+            new_tag="v0.0.1"
+          else
+            IFS='.' read -r -a parts <<< "${{ env.latest_tag#v }}"
+            major=${parts[0]}
+            minor=${parts[1]}
+            patch=${parts[2]}
+            patch=$((patch + 1))
+            new_tag="v$major.$minor.$patch"
+          fi
+          echo "New tag: $new_tag"
+          echo "new_tag=$new_tag" >> $GITHUB_ENV
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag $new_tag
+          git push origin $new_tag
+
+      - name: Create GitHub Release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.calculate_next_tag.outputs.tag }}
-          release_name: Release ${{ steps.calculate_next_tag.outputs.tag }}
+          tag_name: ${{ env.new_tag }}
+          release_name: ${{ env.new_tag }}
+          body: ""
           draft: false
           prerelease: false
 
-      - name: Upload Release Asset
+      - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
-          asset_name: ${{ github.repository }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          upload_url: ${{ steps.bump_version.outputs.upload_url }}
+          asset_path: ./myrepo-linux-amd64.zip
+          asset_name: myrepo-linux-amd64.zip
+          asset_content_type: application/zip
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.bump_version.outputs.upload_url }}
+          asset_path: ./myrepo-linux-arm64.zip
+          asset_name: myrepo-linux-arm64.zip
+          asset_content_type: application/zip
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.bump_version.outputs.upload_url }}
+          asset_path: ./myrepo-darwin-amd64.zip
+          asset_name: myrepo-darwin-amd64.zip
+          asset_content_type: application/zip
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.bump_version.outputs.upload_url }}
+          asset_path: ./myrepo-darwin-arm64.zip
+          asset_name: myrepo-darwin-arm64.zip
+          asset_content_type: application/zip
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.bump_version.outputs.upload_url }}
+          asset_path: ./myrepo-windows-amd64.zip
+          asset_name: myrepo-windows-amd64.zip
+          asset_content_type: application/zip
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.bump_version.outputs.upload_url }}
+          asset_path: ./myrepo-windows-arm64.zip
+          asset_name: myrepo-windows-arm64.zip
+          asset_content_type: application/zip
