@@ -39,7 +39,7 @@ jobs:
             NEXT_TAG=$(echo $NEXT_TAG | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
             EXISTS=$(git tag -l "$NEXT_TAG")
           done
-          echo "tag=$NEXT_TAG" >> $GITHUB_ENV # 使用环境文件设置输出
+          echo "tag=$NEXT_TAG" >> $GITHUB_ENV
 
       - name: Build for all platforms
         run: |
@@ -56,7 +56,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.tag }} # 从环境文件中读取标签
+          tag_name: ${{ env.tag }}
           release_name: Release ${{ env.tag }}
           draft: false
           prerelease: false
