@@ -17,14 +17,21 @@ import (
 )
 
 func main() {
-	log.Println("开始请求获取CID...")
-	client := &http.Client{}
-	cidURL := "https://api.bilibili.com/x/player/pagelist?"
 	args := os.Args
-	if strings.HasPrefix(strings.ToLower(args[1]), "av") {
-		cidURL += fmt.Sprintf("avid=%s", url.QueryEscape(args[1]))
-	} else if strings.HasPrefix(strings.ToLower(args[1]), "bv") {
-		cidURL += fmt.Sprintf("bvid=%s", url.QueryEscape(args[1]))
+	if len(args) > 2 || len(args) < 2 {
+		log.Println(args[0] + " [av/bv号(大小写敏感)]")
+		return
+	}
+	vid := matchVIDURL(parseShortURL(args[1]))
+	if vid == "" {
+		vid = args[1]
+	}
+	log.Println("开始请求获取CID...")
+	cidURL := "https://api.bilibili.com/x/player/pagelist?"
+	if strings.HasPrefix(strings.ToLower(vid), "av") {
+		cidURL += fmt.Sprintf("avid=%s", url.QueryEscape(vid))
+	} else if strings.HasPrefix(strings.ToLower(vid), "bv") {
+		cidURL += fmt.Sprintf("bvid=%s", url.QueryEscape(vid))
 	}
 	cidReq, err := http.NewRequest("GET", cidURL, nil)
 	if err != nil {
@@ -42,23 +49,33 @@ func main() {
 		return
 	}
 	cidJson := gjson.Parse(string(cidContext))
-	cidJson.Get("data").ForEach(func(key, value gjson.Result) bool {
-		log.Printf("%d, Part标题: %s, PartCID: %d", value.Get("page").Int(), value.Get("part").String(), value.Get("cid").Int())
-		return true
-	})
-	inp, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		panic(err)
+	data := cidJson.Get("data")
+	if len(data.Array()) <= 0 {
+		log.Println("未找到视频")
 		return
 	}
-	inpInt, err := strconv.ParseInt(strings.TrimSuffix(inp, "\r\n"), 10, 64)
-	if err != nil {
-		panic(err)
-		return
+	var pid int64
+	if len(data.Array()) > 1 {
+		data.ForEach(func(key, value gjson.Result) bool {
+			log.Printf("%d, Part标题: %s, PartCID: %d", value.Get("page").Int(), value.Get("part").String(), value.Get("cid").Int())
+			return true
+		})
+		inp, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			panic(err)
+			return
+		}
+		pid, err = strconv.ParseInt(strings.TrimSuffix(inp, "\r\n"), 10, 64)
+		if err != nil {
+			panic(err)
+			return
+		}
+	} else {
+		pid = data.Array()[0].Get("page").Int()
 	}
 	var cid int64
 	cidJson.Get("data").ForEach(func(key, value gjson.Result) bool {
-		if value.Get("page").Int() == inpInt {
+		if value.Get("page").Int() == pid {
 			cid = value.Get("cid").Int()
 			return false
 		}
@@ -129,6 +146,6 @@ func main() {
 		colorCode := rgbToAnsi(comment.Color)
 		// debug
 		//fmt.Printf("Time: %.2f, Type: %d, Font Size: %d, Color: %d, Send Time: %s, Pool Type: %d, MidHash: %s, Dmid: %d\n", comment.Time, comment.Type, comment.FontSize, comment.Color, time.Unix(comment.SendTime, 0).String(), comment.PoolType, crack(comment.MidHash), comment.Dmid)
-		fmt.Printf("%s%s%s UID: %s\n", colorCode, comment.Content, resetColor(), crack(comment.MidHash))
+		fmt.Printf("%s%s%s | UID: %s \n", colorCode, comment.Content, resetColor(), crack(comment.MidHash))
 	}
 }

@@ -7,7 +7,7 @@ import (
 
 // crack 反推bilibili midhash, 返回-1就是没有找到
 func crack(input string) string {
-	// Create the CRC32 table.
+	// Initialize the CRC32 table
 	var crctable [256]uint32
 	for i := 0; i < 256; i++ {
 		crcreg := uint32(i)
@@ -21,7 +21,7 @@ func crack(input string) string {
 		crctable[i] = crcreg
 	}
 
-	// CRC32 calculation.
+	// Function to calculate CRC32 hash
 	crc32 := func(s string) uint32 {
 		crcstart := uint32(0xFFFFFFFF)
 		for i := 0; i < len(s); i++ {
@@ -31,10 +31,10 @@ func crack(input string) string {
 		return crcstart
 	}
 
-	// Get last index used in the CRC32 table.
+	// Function to get the last index of CRC32
 	crc32LastIndex := func(s string) int {
-		var index uint32
 		crcstart := uint32(0xFFFFFFFF)
+		var index uint32
 		for i := 0; i < len(s); i++ {
 			index = (crcstart ^ uint32(s[i])) & 255
 			crcstart = (crcstart >> 8) ^ crctable[index]
@@ -42,7 +42,7 @@ func crack(input string) string {
 		return int(index)
 	}
 
-	// Get CRC index.
+	// Function to find CRC index
 	getCRCIndex := func(t int) int {
 		for i := 0; i < 256; i++ {
 			if crctable[i]>>24 == uint32(t) {
@@ -52,33 +52,22 @@ func crack(input string) string {
 		return -1
 	}
 
-	// Deep check.
+	// Function to perform deep check
 	deepCheck := func(i int, index []int) (bool, string) {
 		hashcode := crc32(strconv.Itoa(i))
-		tc := int(hashcode&0xff) ^ index[2]
-		if tc < 48 || tc > 57 {
-			return false, ""
+		var result string
+		for j := 2; j >= 0; j-- {
+			tc := int(hashcode&0xff) ^ index[j]
+			if tc < 48 || tc > 57 {
+				return false, ""
+			}
+			result = string(rune(tc-48+'0')) + result
+			hashcode = crctable[index[j]] ^ (hashcode >> 8)
 		}
-
-		result := string(rune(tc - 48 + '0'))
-		hashcode = crctable[index[2]] ^ (hashcode >> 8)
-
-		tc = int(hashcode&0xff) ^ index[1]
-		if tc < 48 || tc > 57 {
-			return false, ""
-		}
-		result += string(rune(tc - 48 + '0'))
-		hashcode = crctable[index[1]] ^ (hashcode >> 8)
-
-		tc = int(hashcode&0xff) ^ index[0]
-		if tc < 48 || tc > 57 {
-			return false, ""
-		}
-		result += string(rune(tc - 48 + '0'))
 		return true, result
 	}
 
-	var index = make([]int, 4)
+	var index [4]int
 	ht, _ := strconv.ParseInt(input, 16, 64)
 	ht ^= 0xFFFFFFFF
 
@@ -90,7 +79,7 @@ func crack(input string) string {
 
 	for i := 0; i < 100000000; i++ {
 		if crc32LastIndex(strconv.Itoa(i)) == index[3] {
-			if valid, result := deepCheck(i, index); valid {
+			if valid, result := deepCheck(i, index[:]); valid {
 				return fmt.Sprintf("%d%s", i, result)
 			}
 		}
