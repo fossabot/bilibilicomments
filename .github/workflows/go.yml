@@ -18,12 +18,6 @@ jobs:
         with:
           go-version: "1.23"
 
-      - name: Get current tag
-        id: get_version
-        run: |
-          TAG=$(git describe --tags --abbrev=0 || echo "0.0.0")
-          echo "current_tag=$TAG" >> $GITHUB_OUTPUT
-
       - name: Debug logs
         run: |
           git fetch --tags
@@ -34,11 +28,6 @@ jobs:
         id: get_version
         run: |
           TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
-          if [ "$TAG" == "0.0.0" ]; then
-            echo "No tags found, defaulting to $TAG"
-          else
-            echo "Found tag: $TAG"
-          fi
           echo "current_tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Calculate next tag or use existing
