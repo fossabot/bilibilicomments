@@ -1,5 +1,5 @@
 name: Go Release
-#1
+
 on:
   push:
     branches: ["main"]
@@ -7,6 +7,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,10 +47,9 @@ jobs:
             NEXT_TAG="v0.0.1"
           fi
 
-          while git tag -l "$NEXT_TAG" >/dev/null 2>&1; do
+          while git rev-parse "$NEXT_TAG" >/dev/null 2>&1; do
             PATCH=$(echo "$NEXT_TAG" | cut -d '.' -f 3)
-            PATCH=$((PATCH + 1))
-            NEXT_TAG="v$MAJOR.$MINOR.$PATCH"
+            NEXT_TAG="v$MAJOR.$MINOR.$((PATCH + 1))"
           done
 
           echo "Final Next Tag: $NEXT_TAG"
