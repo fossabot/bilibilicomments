@@ -63,10 +63,15 @@ jobs:
         id: build
         run: |
           mkdir -p build
-          platforms=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64" "windows/amd64" "windows/arm64")
+          platforms=("darwin/amd64" "darwin/arm64" "linux/386" "linux/amd64" "linux/arm64" "linux/arm" "linux/ppc64le" "linux/mips" "linux/mipsle" "linux/mips64" "linux/mips64le" "windows/386" "windows/amd64" "windows/arm64")
           for platform in "${platforms[@]}"; do
-            GOOS=${platform%/*} GOARCH=${platform#*/} go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/} -v
-            tar -czvf build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}.tar.gz -C build ${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}
+            GOOS=${platform%/*} 
+            GOARCH=${platform#*/}
+            output_name=build/${GITHUB_REPOSITORY##*/}_${GOOS}_${GOARCH}
+            if [[ "$GOOS" == "windows" ]]; then
+              output_name+='.exe'
+            fi
+            env GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o $output_name -v
           done
 
       - name: Create or Update Release
