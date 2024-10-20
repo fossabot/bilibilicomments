@@ -27,20 +27,31 @@ jobs:
       - name: Get current tag
         id: get_version
         run: |
-          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "current_tag=$TAG" >> $GITHUB_ENV
 
-      - name: Calculate next tag or use existing
+      - name: Calculate next tag
         id: calculate_tag
         run: |
           CURRENT_TAG="${{ env.current_tag }}"
           echo "Current Tag: $CURRENT_TAG"
-          NEXT_TAG=$(echo "$CURRENT_TAG" | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
-          echo "Initial Next Tag: $NEXT_TAG"
+
+          if [[ "$CURRENT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            BASE_VERSION=$(echo "$CURRENT_TAG" | cut -d 'v' -f 2)
+            MAJOR=$(echo "$BASE_VERSION" | cut -d '.' -f 1)
+            MINOR=$(echo "$BASE_VERSION" | cut -d '.' -f 2)
+            PATCH=$(echo "$BASE_VERSION" | cut -d '.' -f 3)
+            NEXT_TAG="v$MAJOR.$MINOR.$((PATCH + 1))"
+          else
+            NEXT_TAG="v0.0.1"
+          fi
+
           while git tag -l "$NEXT_TAG" >/dev/null 2>&1; do
-            echo "Tag $NEXT_TAG exists. Incrementing..."
-            NEXT_TAG=$(echo "$NEXT_TAG" | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
+            PATCH=$(echo "$NEXT_TAG" | cut -d '.' -f 3)
+            PATCH=$((PATCH + 1))
+            NEXT_TAG="v$MAJOR.$MINOR.$PATCH"
           done
+
           echo "Final Next Tag: $NEXT_TAG"
           echo "tag=$NEXT_TAG" >> $GITHUB_ENV
 
@@ -63,7 +74,7 @@ jobs:
           append_body: true
 
       - name: Build for all platforms
-        if: success()  # Ensure this only runs if there was no failure in release step
+        if: success()  # Ensure this only runs if there was no failure in the release step
         run: |
           mkdir -p build
           platforms=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64" "windows/amd64" "windows/arm64")
