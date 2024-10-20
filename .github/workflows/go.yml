@@ -55,6 +55,16 @@ jobs:
           echo "Final Next Tag: $NEXT_TAG"
           echo "tag=$NEXT_TAG" >> $GITHUB_ENV
 
+      - name: Build for all platforms
+        id: build
+        run: |
+          mkdir -p build
+          platforms=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64" "windows/amd64" "windows/arm64")
+          for platform in "${platforms[@]}"; do
+            GOOS=${platform%/*} GOARCH=${platform#*/} go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/} -v
+            tar -czvf build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}.tar.gz -C build ${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}
+          done
+
       - name: Create or Update Release
         uses: softprops/action-gh-release@v1
         env:
@@ -71,14 +81,3 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             build/*
-          append_body: true
-
-      - name: Build for all platforms
-        if: success()  # Ensure this only runs if there was no failure in the release step
-        run: |
-          mkdir -p build
-          platforms=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64" "windows/amd64" "windows/arm64")
-          for platform in "${platforms[@]}"; do
-            GOOS=${platform%/*} GOARCH=${platform#*/} go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC'" -gcflags="all=-l -B -trimpath=" -o build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/} -v
-            tar -czvf build/${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}.tar.gz -C build ${GITHUB_REPOSITORY##*/}_${platform%/*}_${platform#*/}
-          done
