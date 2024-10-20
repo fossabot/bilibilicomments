@@ -19,7 +19,7 @@ import (
 func main() {
 	args := os.Args
 	if len(args) > 2 || len(args) < 2 {
-		log.Println(args[0] + " [av/bv号(大小写敏感)]")
+		log.Println(args[0] + " [av/bv号/url(大小写敏感)]")
 		return
 	}
 	vid := matchVIDURL(parseShortURL(args[1]))
@@ -144,7 +144,6 @@ func main() {
 	})
 	for _, comment := range parsedComments {
 		colorCode := rgbToAnsi(comment.Color)
-		// debug
 		//fmt.Printf("Time: %.2f, Type: %d, Font Size: %d, Color: %d, Send Time: %s, Pool Type: %d, MidHash: %s, Dmid: %d\n", comment.Time, comment.Type, comment.FontSize, comment.Color, time.Unix(comment.SendTime, 0).String(), comment.PoolType, crack(comment.MidHash), comment.Dmid)
 		fmt.Printf("%s%s%s | UID: %s \n", colorCode, comment.Content, resetColor(), crack(comment.MidHash))
 	}
