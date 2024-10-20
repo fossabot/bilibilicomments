@@ -22,32 +22,35 @@ jobs:
         run: |
           git fetch --tags
           git tag
-          git describe --tags --abbrev=0
+          git describe --tags --abbrev=0 || echo "No tags found"
 
       - name: Get current tag
         id: get_version
         run: |
           TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
-          echo "current_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "current_tag=$TAG" >> $GITHUB_ENV
 
       - name: Calculate next tag or use existing
         id: calculate_tag
         run: |
-          CURRENT_TAG=${{ steps.get_version.outputs.current_tag || '0.0.0' }}
-          NEXT_TAG=$(echo $CURRENT_TAG | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
-          while git tag -l "$NEXT_TAG"; do
-            NEXT_TAG=$(echo $NEXT_TAG | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
+          CURRENT_TAG="${{ env.current_tag }}"
+          echo "Current Tag: $CURRENT_TAG"
+          NEXT_TAG=$(echo "$CURRENT_TAG" | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
+          echo "Initial Next Tag: $NEXT_TAG"
+          while git tag -l "$NEXT_TAG" >/dev/null 2>&1; do
+            echo "Tag $NEXT_TAG exists. Incrementing..."
+            NEXT_TAG=$(echo "$NEXT_TAG" | awk -F. '{print $1 "." $2 "." ($3 + 1)}')
           done
-          echo "tag=$NEXT_TAG" >> $GITHUB_OUTPUT
+          echo "Final Next Tag: $NEXT_TAG"
+          echo "tag=$NEXT_TAG" >> $GITHUB_ENV
 
       - name: Create or Update Release
-        id: create_or_update_release
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.calculate_tag.outputs.tag }}
-          name: Release ${{ steps.calculate_tag.outputs.tag }}
+          tag_name: ${{ env.tag }}
+          name: Release ${{ env.tag }}
           body: |
             Changes in this Release
             - First Change
@@ -57,7 +60,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             build/*
-          append_body: true  # This allows you to append to the existing body if updating a release
+          append_body: true
 
       - name: Build for all platforms
         if: success()  # Ensure this only runs if there was no failure in release step
