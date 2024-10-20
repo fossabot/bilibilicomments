@@ -142,6 +142,7 @@ func main() {
 	sort.Slice(parsedComments, func(i, j int) bool {
 		return parsedComments[i].Time < parsedComments[j].Time
 	})
+	crcinit()
 	for _, comment := range parsedComments {
 		colorCode := rgbToAnsi(comment.Color)
 		//fmt.Printf("Time: %.2f, Type: %d, Font Size: %d, Color: %d, Send Time: %s, Pool Type: %d, MidHash: %s, Dmid: %d\n", comment.Time, comment.Type, comment.FontSize, comment.Color, time.Unix(comment.SendTime, 0).String(), comment.PoolType, crack(comment.MidHash), comment.Dmid)
