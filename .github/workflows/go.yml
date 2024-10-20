@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   release:
+    if: contains(github.event.head_commit.message, 'Release')
     runs-on: ubuntu-latest
 
     steps:
@@ -72,7 +73,7 @@ jobs:
               EXTS=".exe"
             fi
             if [[ "$GOARCH" == "amd64" ]]; then
-              for GOAMD64 in v2 v3; do
+              for GOAMD64 in v1 v2 v3; do
                 output_name=build/${GITHUB_REPOSITORY##*/}_${GOOS}_${GOARCH}${GOAMD64}${EXTS}
                 env GOOS=$GOOS GOARCH=$GOARCH GOAMD64=$GOAMD64 go build -trimpath -ldflags="-s -w -buildid= -extldflags='-fno-PIC' -o=$output_name" -gcflags="all=-l -B -trimpath=" -v || echo "Failed to build for $platform with $GOAMD64"
               done
