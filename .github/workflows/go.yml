@@ -20,9 +20,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.24.4"
 
       - name: Get current tag
         id: get_version
@@ -79,7 +79,7 @@ jobs:
           done
 
       - name: Create or Update Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -87,7 +87,6 @@ jobs:
           name: bilibilicomments Release ${{ env.tag }}
           body: |
             **Full Changelog**: https://github.com/Sn0wo2/bilibilicomments/compare/${{ env.current_tag }}...${{ env.tag }}
-            GitHub Action Build
           draft: false
           prerelease: false
           fail_on_unmatched_files: false
