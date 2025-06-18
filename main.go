@@ -5,147 +5,216 @@ import (
 	"compress/flate"
 	"encoding/xml"
 	"fmt"
-	"github.com/tidwall/gjson"
 	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+
+	"bilibilicomments/common"
+
+	"github.com/tidwall/gjson"
 )
 
-func main() {
-	args := os.Args
-	if len(args) > 2 || len(args) < 2 {
-		log.Println(args[0] + " [av/bv号/url(大小写敏感)]")
-		return
+func getCID(input string) (int64, error) {
+	cid, err := strconv.ParseInt(input, 10, 64)
+	if err == nil {
+		return cid, nil
 	}
-	vid := matchVIDURL(parseShortURL(args[1]))
+
+	vid := common.MatchVIDURL(common.ParseShortURL(input))
 	if vid == "" {
-		vid = args[1]
+		vid = input
 	}
+
 	log.Println("开始请求获取CID...")
-	cidURL := "https://api.bilibili.com/x/player/pagelist?"
-	if strings.HasPrefix(strings.ToLower(vid), "av") {
-		cidURL += fmt.Sprintf("avid=%s", url.QueryEscape(vid))
-	} else if strings.HasPrefix(strings.ToLower(vid), "bv") {
-		cidURL += fmt.Sprintf("bvid=%s", url.QueryEscape(vid))
-	}
-	cidReq, err := http.NewRequest("GET", cidURL, nil)
+	cidURL, err := url.Parse("https://api.bilibili.com/x/player/pagelist")
 	if err != nil {
-		panic(err)
-		return
+		return 0, fmt.Errorf("解析URL失败: %v", err)
 	}
-	cidRsp, err := client.Do(cidReq)
+	query := cidURL.Query()
+	switch strings.ToLower(vid)[:2] {
+	case "av":
+		query.Add("avid", vid)
+	case "bv":
+		query.Add("bvid", vid)
+	default:
+		return 0, fmt.Errorf("不支持的输入格式")
+	}
+	cidURL.RawQuery = query.Encode()
+
+	resp, err := common.Client.Get(cidURL.String())
 	if err != nil {
-		panic(err)
-		return
+		return 0, fmt.Errorf("请求失败: %v", err)
 	}
-	cidContext, err := io.ReadAll(cidRsp.Body)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		panic(err)
-		return
+		return 0, fmt.Errorf("读取响应失败: %v", err)
 	}
-	cidJson := gjson.Parse(string(cidContext))
-	data := cidJson.Get("data")
+
+	result := gjson.Parse(string(body))
+	data := result.Get("data")
 	if len(data.Array()) <= 0 {
-		log.Println("未找到视频")
-		return
+		return 0, fmt.Errorf("未找到视频")
 	}
-	var pid int64
+
+sel:
+	pid := data.Array()[0].Get("page").Int()
 	if len(data.Array()) > 1 {
 		data.ForEach(func(key, value gjson.Result) bool {
-			log.Printf("%d, Part标题: %s, PartCID: %d", value.Get("page").Int(), value.Get("part").String(), value.Get("cid").Int())
+			log.Printf("%d, Part标题: %s, PartCID: %d",
+				value.Get("page").Int(),
+				value.Get("part").String(),
+				value.Get("cid").Int(),
+			)
 			return true
 		})
+
 		inp, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil {
-			panic(err)
-			return
+			return 0, fmt.Errorf("读取输入失败: %v", err)
 		}
-		pid, err = strconv.ParseInt(strings.TrimSuffix(inp, "\r\n"), 10, 64)
+		pid, err = strconv.ParseInt(strings.TrimSpace(inp), 10, 64)
 		if err != nil {
-			panic(err)
-			return
+			log.Printf("无效输入 `%s`，使用默认 part %d\n", inp, pid)
+			goto sel
 		}
-	} else {
-		pid = data.Array()[0].Get("page").Int()
 	}
-	var cid int64
-	cidJson.Get("data").ForEach(func(key, value gjson.Result) bool {
+
+	var cidVal int64
+	result.Get("data").ForEach(func(key, value gjson.Result) bool {
 		if value.Get("page").Int() == pid {
-			cid = value.Get("cid").Int()
+			cidVal = value.Get("cid").Int()
 			return false
 		}
 		return true
 	})
-	if cid == 0 {
-		log.Println("没有找到对应的CID")
-		return
+
+	if cidVal <= 0 {
+		return 0, fmt.Errorf("无效的 CID")
 	}
-	commitReq, err := http.NewRequest("GET", fmt.Sprintf("https://comment.bilibili.com/%d.xml", cid), nil)
+	return cidVal, nil
+}
+
+type entry struct {
+	time    float64
+	color   int
+	content string
+
+	midHash string
+
+	uid   string
+	ready bool
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		log.Fatalln(os.Args[0], "[av/bv号/url/cid]")
+	}
+
+	cid, err := getCID(os.Args[1])
 	if err != nil {
-		panic(err)
-		return
+		log.Fatalln("获取CID失败:", err)
 	}
-	res, err := client.Do(commitReq)
+
+	log.Println("使用 CID:", cid)
+
+	u, _ := url.Parse("https://api.bilibili.com/x/v1/dm/list.so")
+	q := u.Query()
+	q.Add("oid", strconv.FormatInt(cid, 10))
+	u.RawQuery = q.Encode()
+
+	resp, err := common.Client.Get(u.String())
 	if err != nil {
-		panic(err)
-		return
+		log.Fatalln("请求弹幕失败:", err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			panic(err)
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		log.Fatalln("请求返回非 200:", resp.Status)
+	}
+
+	var reader io.ReadCloser
+	if resp.Header.Get("Content-Encoding") == "deflate" {
+		reader = flate.NewReader(resp.Body)
+		defer reader.Close()
+	} else {
+		reader = resp.Body
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		log.Fatalln("读弹幕失败:", err)
+	}
+
+	var commit common.Commit
+	if err := xml.Unmarshal(data, &commit); err != nil {
+		log.Fatalln("XML解析失败:", err)
+	}
+	log.Printf("共 %d 条弹幕\n", len(commit.Comments))
+
+	entries := make([]*entry, len(commit.Comments))
+	for i, cm := range commit.Comments {
+		t, _, _, color, _, _, midHash, _, _ := common.ParsePAttribute(cm.P)
+		entries[i] = &entry{
+			time:    t,
+			color:   color,
+			content: cm.Content,
+			midHash: midHash,
 		}
-	}(res.Body)
-
-	flateReader := flate.NewReader(res.Body)
-	defer func(flateReader io.ReadCloser) {
-		err := flateReader.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(flateReader)
-	context, err := io.ReadAll(flateReader)
-	if err != nil {
-		panic(err)
-		return
 	}
 
-	var commit Commit
-	err = xml.Unmarshal(context, &commit)
-	if err != nil {
-		panic(err)
-		return
-	}
-	log.Printf("获取到 %d 条弹幕, 开始输出:\n", len(commit.Comments))
-
-	var parsedComments []ParsedComment
-	for _, comment := range commit.Comments {
-		time, danmakuType, fontSize, color, sendTime, poolType, midHash, dmid := parsePAttribute(comment.P)
-		parsedComments = append(parsedComments, ParsedComment{
-			Time:     time,
-			Type:     danmakuType,
-			FontSize: fontSize,
-			Color:    color,
-			SendTime: sendTime,
-			PoolType: poolType,
-			MidHash:  midHash,
-			Dmid:     dmid,
-			Content:  comment.Content,
-		})
-	}
-
-	sort.Slice(parsedComments, func(i, j int) bool {
-		return parsedComments[i].Time < parsedComments[j].Time
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].time < entries[j].time
 	})
-	crcinit()
-	for _, comment := range parsedComments {
-		colorCode := rgbToAnsi(comment.Color)
-		//fmt.Printf("Time: %.2f, Type: %d, Font Size: %d, Color: %d, Send Time: %s, Pool Type: %d, MidHash: %s, Dmid: %d\n", comment.Time, comment.Type, comment.FontSize, comment.Color, time.Unix(comment.SendTime, 0).String(), comment.PoolType, crack(comment.MidHash), comment.Dmid)
-		fmt.Printf("%s%s%s | UID: %s \n", colorCode, comment.Content, resetColor(), crack(comment.MidHash))
+
+	var (
+		mu   sync.Mutex
+		cond = sync.NewCond(&mu)
+	)
+
+	wg := sync.WaitGroup{}
+	jobs := make(chan *entry)
+
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for e := range jobs {
+				// crack很慢
+				uid := common.Crack(e.midHash)
+				mu.Lock()
+				e.uid = uid
+				e.ready = true
+				cond.Broadcast()
+				mu.Unlock()
+			}
+		}()
 	}
+
+	go func() {
+		for _, e := range entries {
+			jobs <- e
+		}
+		close(jobs)
+	}()
+
+	mu.Lock()
+	for _, e := range entries {
+		for !e.ready {
+			cond.Wait()
+		}
+		fmt.Printf("%.2fs | %s%s%s | UID: %s\n",
+			e.time,
+			common.RgbToAnsi(e.color),
+			e.content,
+			common.ResetColor(),
+			e.uid)
+	}
+	mu.Unlock()
+
+	wg.Wait()
 }

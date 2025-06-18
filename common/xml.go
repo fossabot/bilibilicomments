@@ -1,4 +1,4 @@
-package main
+package common
 
 import (
 	"encoding/xml"
@@ -32,26 +32,28 @@ type ParsedComment struct {
 	PoolType int
 	MidHash  string
 	Dmid     int64
+	Level    int
+	UID      string
 	Content  string
 }
 
-func parsePAttribute(p string) (float64, int, int, int, int64, int, string, int64) {
-	parts := strings.Split(p, ",")
+func ParsePAttribute(p string) (time float64, danmakuType, fontSize, color int, sendTime int64, poolType int, midHash string, dmid int64, level int) {
+	parts := strings.SplitN(p, ",", 9)
 	if len(parts) < 8 {
-		return 0, 0, 0, 0, 0, 0, "", 0
+		return
 	}
-	var time float64
-	var danmakuType, fontSize, color, poolType int
-	var sendTime int64
-	var midHash string
-	var dmid int64
+	if len(parts) == 8 {
+		parts = append(parts, "0")
+	}
+
 	_, _ = fmt.Sscanf(parts[0], "%f", &time)
 	_, _ = fmt.Sscanf(parts[1], "%d", &danmakuType)
 	_, _ = fmt.Sscanf(parts[2], "%d", &fontSize)
 	_, _ = fmt.Sscanf(parts[3], "%d", &color)
 	_, _ = fmt.Sscanf(parts[4], "%d", &sendTime)
 	_, _ = fmt.Sscanf(parts[5], "%d", &poolType)
-	_, _ = fmt.Sscanf(parts[6], "%s", &midHash)
+	midHash = parts[6]
 	_, _ = fmt.Sscanf(parts[7], "%d", &dmid)
-	return time, danmakuType, fontSize, color, sendTime, poolType, midHash, dmid
+	_, _ = fmt.Sscanf(parts[8], "%d", &level)
+	return time, danmakuType, fontSize, color, sendTime, poolType, midHash, dmid, level
 }
